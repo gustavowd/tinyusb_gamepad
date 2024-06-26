@@ -46,6 +46,7 @@ typedef struct gamepad_t_{
 #define HID_STACK_SIZE     2*configMINIMAL_STACK_SIZE
 
 #define DEBOUNCE_TIME 		5
+#define DEFAULT_MAPPING		0
 #define PIN_MASK			0xF7FB
 /* USER CODE END PD */
 
@@ -88,6 +89,12 @@ void gamepad_init(gamepad_t *gamepad, uint8_t *mapped_buttons){
 	gamepad->updated = false;
 	gamepad->debounced_gpio = 0;
 	//gamepad->previous_debounced_gpio = 0;
+}
+
+void gamepad_new_button_map(gamepad_t *gamepad, uint8_t *mapped_buttons){
+	for (int i=0;i<16;i++){
+		gamepad->mapped_button[i] = *mapped_buttons++;
+	}
 }
 
 
@@ -308,14 +315,15 @@ static void send_hid_report(uint8_t report_id, gamepad_t *gamepad)
 }
 
 static gamepad_t gamepad;
+static int current_mapping = DEFAULT_MAPPING;
+static uint8_t mapped_buttons[3][16] = {{HID_KEY_O, HID_KEY_ENTER, HID_KEY_N, HID_KEY_SPACE, 0, 0, 0, HID_KEY_I, HID_KEY_U, HID_KEY_W, HID_KEY_D, HID_KEY_S, HID_KEY_A, 0, HID_KEY_K, HID_KEY_J}, {HID_KEY_K, HID_KEY_M, HID_KEY_N, HID_KEY_B, 0, 0, 0, HID_KEY_H, HID_KEY_ARROW_UP, HID_KEY_SPACE, HID_KEY_ARROW_RIGHT, HID_KEY_ENTER, HID_KEY_ARROW_LEFT, 0, HID_KEY_J, HID_KEY_ARROW_DOWN}, {0}};
 //static uint8_t mapped_buttons[16] = {HID_KEY_K, HID_KEY_M, HID_KEY_N, HID_KEY_B, 0, 0, 0, HID_KEY_H, HID_KEY_ARROW_UP, HID_KEY_SPACE, HID_KEY_ARROW_RIGHT, HID_KEY_ENTER, HID_KEY_ARROW_LEFT, 0, HID_KEY_J, HID_KEY_ARROW_DOWN};
-static uint8_t mapped_buttons[16] = {HID_KEY_O, HID_KEY_ENTER, HID_KEY_N, HID_KEY_SPACE, 0, 0, 0, HID_KEY_I, HID_KEY_U, HID_KEY_W, HID_KEY_D, HID_KEY_S, HID_KEY_A, 0, HID_KEY_K, HID_KEY_J};
 
 
 void hid_task(void* param)
 {
   (void) param;
-  gamepad_init(&gamepad, (uint8_t *)&mapped_buttons);
+  gamepad_init(&gamepad, (uint8_t *)&mapped_buttons[current_mapping]);
 
   while(1)
   {
@@ -417,8 +425,8 @@ void led_blinky_cb(TimerHandle_t xTimer)
   led_state = 1 - led_state; // toggle
 }
 
-#define MAX_INPUT_LENGTH    64
-#define MAX_OUTPUT_LENGTH   128
+#define MAX_INPUT_LENGTH    256
+#define MAX_OUTPUT_LENGTH   256
 SemaphoreHandle_t sem_cdc_rx, sem_cdc_tx;
 
 void CDC_Transmit_HS(void const* buffer, uint32_t bufsize){
@@ -426,6 +434,92 @@ void CDC_Transmit_HS(void const* buffer, uint32_t bufsize){
     tud_cdc_write_flush();
     xSemaphoreTake(sem_cdc_tx, portMAX_DELAY);
 }
+
+static BaseType_t prvTaskButtonMapCommand( char *pcWriteBuffer,
+                                          size_t xWriteBufferLen,
+										  const char *pcCommandString )
+{
+	char *pcParameter;
+	BaseType_t lParameterStringLength;
+    pcParameter = ( char * ) FreeRTOS_CLIGetParameter
+                                (
+                                    /* The command string itself. */
+                                    pcCommandString,
+                                    /* Return the next parameter. */
+                                    1,
+                                    /* Store the parameter string length. */
+                                    &lParameterStringLength
+                                );
+    if (strncmp(pcParameter, "get", lParameterStringLength) == 0){
+    	switch (current_mapping){
+    		case 0:
+    			sprintf( pcWriteBuffer, "Current button mapping: {HID_KEY_O, HID_KEY_ENTER, HID_KEY_N, HID_KEY_SPACE, 0, 0, 0, HID_KEY_I, HID_KEY_U, HID_KEY_W, HID_KEY_D, HID_KEY_S, HID_KEY_A, 0, HID_KEY_K, HID_KEY_J}\n\r\n\r");
+    			break;
+    		case 1:
+    			sprintf( pcWriteBuffer, "Current button mapping: {HID_KEY_K, HID_KEY_M, HID_KEY_N, HID_KEY_B, 0, 0, 0, HID_KEY_H, HID_KEY_ARROW_UP, HID_KEY_SPACE, HID_KEY_ARROW_RIGHT, HID_KEY_ENTER, HID_KEY_ARROW_LEFT, 0, HID_KEY_J, HID_KEY_ARROW_DOWN}\n\r\n\r");
+    			break;
+    		case 2:
+    			sprintf( pcWriteBuffer, "Alternative button mapping\n\r\n\r");
+    			break;
+    		default:
+    			break;
+    	}
+    }else if (strncmp(pcParameter, "set", lParameterStringLength) == 0){
+        pcParameter = ( char * ) FreeRTOS_CLIGetParameter
+                                    (
+                                        /* The command string itself. */
+                                        pcCommandString,
+                                        /* Return the next parameter. */
+                                        2,
+                                        /* Store the parameter string length. */
+                                        &lParameterStringLength
+                                    );
+        if (strncmp(pcParameter, "1", lParameterStringLength) == 0){
+        	current_mapping = 0;
+        	sprintf( pcWriteBuffer, "Define default button mapping\n\r\n\r");
+        	gamepad_new_button_map(&gamepad, mapped_buttons[current_mapping]);
+        }else if (strncmp(pcParameter, "2", lParameterStringLength) == 0){
+        	current_mapping = 1;
+        	sprintf( pcWriteBuffer, "Define alternative button mapping\n\r\n\r");
+        	gamepad_new_button_map(&gamepad, mapped_buttons[current_mapping]);
+        }else if (strncmp(pcParameter, "3", lParameterStringLength) == 0){
+            pcParameter = ( char * ) FreeRTOS_CLIGetParameter
+                                        (
+                                            /* The command string itself. */
+                                            pcCommandString,
+                                            /* Return the next parameter. */
+                                            3,
+                                            /* Store the parameter string length. */
+                                            &lParameterStringLength
+                                        );
+            // parse third argument
+        	current_mapping = 2;
+        	sprintf( pcWriteBuffer, "Define custom button mapping\n\r\n\r");
+        	gamepad_new_button_map(&gamepad, mapped_buttons[current_mapping]);
+        }else{
+        	sprintf( pcWriteBuffer, "Invalid Arg 1!\n\r");
+        }
+    }
+    return pdFALSE;
+}
+
+static const CLI_Command_Definition_t xButtonsMapCommand =
+{
+	"map_buttons",
+	"map_buttons: Define the button mapping\r\n\r\n\
+	Usage: map_buttons [COMMAND] [ARG1] [ARG2]\r\n\r\n\
+	Command:\r\n\\
+	   get        Return the button mapping in use (whithout args)\r\n\
+	   set		  Specify a valid button map\r\n\r\n\
+	Arg1:\n\r\
+	   1 for the default button map: {HID_KEY_O, HID_KEY_ENTER, ..}\r\n\
+	   2 for the alternative button map: {HID_KEY_K, HID_KEY_M, ..}\r\n\
+	   3 for a custom map in the same format of the previous mapping tables: {HID_KEY_O, HID_KEY_ENTER, ...}\r\n\
+	Arg2:\n\r\
+	   custom map with 16 keys\n\r",
+	prvTaskButtonMapCommand,
+    -1
+};
 //--------------------------------------------------------------------+
 // USB CDC
 //--------------------------------------------------------------------+
@@ -447,7 +541,7 @@ void cdc_task(void* params)
 	}while (!tud_cdc_connected());
 
 	CDC_Transmit_HS(welcome, strlen(welcome));
-	//FreeRTOS_CLIRegisterCommand( &xLEDCommand );
+	FreeRTOS_CLIRegisterCommand(&xButtonsMapCommand);
 
   // RTOS forever loop
 	while(1)
@@ -502,7 +596,7 @@ void cdc_task(void* params)
 				{
 					/* Ignore carriage returns. */
 				}
-				else if( cRxedChar == '\b' )
+				else if( (cRxedChar == '\b') || (cRxedChar == 127))
 				{
 					/* Backspace was pressed.  Erase the last character in the input
 					buffer - if there are any. */
@@ -510,6 +604,7 @@ void cdc_task(void* params)
 					{
 						cInputIndex--;
 						pcInputString[ cInputIndex ] = '\0';
+						(void)CDC_Transmit_HS((uint8_t *)&cRxedChar, 1);
 					}
 				}
 				else
@@ -580,8 +675,8 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 256);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  //osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 256);
+  //defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -695,6 +790,7 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
+#if 0
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
@@ -705,6 +801,7 @@ void StartDefaultTask(void const * argument)
   }
   /* USER CODE END 5 */
 }
+#endif
 
 /**
   * @brief  Period elapsed callback in non blocking mode
