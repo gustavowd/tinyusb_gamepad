@@ -41,9 +41,9 @@ typedef struct gamepad_t_{
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define USBD_STACK_SIZE    (3*configMINIMAL_STACK_SIZE/2) * (CFG_TUSB_DEBUG ? 2 : 1)
-#define CDC_STACK_SIZE     configMINIMAL_STACK_SIZE
-#define HID_STACK_SIZE     configMINIMAL_STACK_SIZE
+#define USBD_STACK_SIZE    (6*configMINIMAL_STACK_SIZE/2) * (CFG_TUSB_DEBUG ? 2 : 1)
+#define CDC_STACK_SIZE     2*configMINIMAL_STACK_SIZE
+#define HID_STACK_SIZE     2*configMINIMAL_STACK_SIZE
 
 #define DEBOUNCE_TIME 		5
 #define PIN_MASK			0xF7FB
